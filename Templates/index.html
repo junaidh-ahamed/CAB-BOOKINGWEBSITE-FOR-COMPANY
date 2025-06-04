@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Company Cab Booking</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        #map { height: 400px; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto p-4">
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold">Company Cab Booking</h1>
+            <div>
+                <span class="mr-4">Welcome, {{ session.name }}</span>
+                <a href="{{ url_for('logout') }}" class="text-blue-600 hover:underline">Logout</a>
+            </div>
+        </div>
+
+        <!-- Booking Form -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+            <h2 class="text-2xl font-semibold mb-4">Book a Cab</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <input id="pickup" type="text" placeholder="Pickup Location" 
+                       class="border p-2 rounded w-full">
+                <input id="dropoff" type="text" placeholder="Dropoff Location" 
+                       class="border p-2 rounded w-full">
+                <input id="pickup_time" type="datetime-local" 
+                       class="border p-2 rounded w-full">
+            </div>
+            <button onclick="bookCab()" 
+                    class="mt-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                Book Now
+            </button>
+            <p id="booking-message" class="mt-2 text-green-600 hidden"></p>
+        </div>
+
+        <!-- Bookings List -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+            <h2 class="text-2xl font-semibold mb-4">Your Bookings</h2>
+            <div id="bookings-list"></div>
+        </div>
+
+        <!-- Map for Tracking -->
+        <div class="bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-2xl font-semibold mb-4">Track Your Ride</h2>
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <script>
+        let map = null;
+        let marker = null;
+
+        function initMap() {
+            map = L.map('map').setView([40.7128, -74.0060], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+        }
+
+        async function bookCab() {
+            const pickup = document.getElementById('pickup').value;
+            const dropoff = document.getElementById('dropoff').value;
+            const pickup_time = document.getElementById('pickup_time').value;
+            
+            if (!pickup || !dropoff || !pickup_time) {
+                alert('Please fill all fields');
+                return;
+            }
+
+            const response = await fetch('/book', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pickup, dropoff, pickup_time })
+            });
+            const result = await response.json();
+            
+            const message = document.getElementById('booking-message');
+            message.classList.remove('hidden');
+            message.textContent = result.message;
+            
+            if (result.success) {
+                setTimeout(() => message.classList.add('hidden'), 3000);
+                loadBookings();
+            }
+        }
+
+        async function loadBookings() {
+            const response = await fetch('/bookings');
+            const bookings = await response.json();
+            const bookingsList = document.getElementById('bookings-list');
+            bookingsList.innerHTML = '';
+
+            bookings.forEach(booking => {
+                const div = document.createElement('div');
+                div.className = 'border-b py-2';
+                div.innerHTML = `
+                    <p><strong>Booking ID:</strong> ${booking.id}</p>
+                    <p><strong>Pickup:</strong> ${booking.pickup}</p>
+                    <p><strong>Dropoff:</strong> ${booking.dropoff}</p>
+                    <p><strong>Time:</strong> ${booking.pickup_time}</p>
+                    <p><strong>Status:</strong> ${booking.status}</p>
+                    <p><strong>Fare:</strong> $${booking.fare}</p>
+                    <p><strong>Driver:</strong> ${booking.driver_name} (${booking.vehicle})</p>
+                    <button onclick="trackBooking(${booking.id})" 
+                            class="bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700">
+                        Track
+                    </button>
+                `;
+                bookingsList.appendChild(div);
+            });
+        }
+
+        async function trackBooking(bookingId) {
+            const response = await fetch(`/track/${bookingId}`);
+            const result = await response.json();
+            
+            if (result.success) {
+                if (!map) initMap();
+                
+                if (marker) map.removeLayer(marker);
+                marker = L.marker([result.coordinates.lat, result.coordinates.lng])
+                    .addTo(map)
+                    .bindPopup(`Ride Progress: ${result.progress.toFixed(1)}%`)
+                    .openPopup();
+                
+                map.setView([result.coordinates.lat, result.coordinates.lng], 13);
+            }
+        }
+
+        // Load bookings on page load
+        window.onload = () => {
+            initMap();
+            loadBookings();
+        };
+    </script>
+</body>
+</html>
